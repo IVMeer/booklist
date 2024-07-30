@@ -203,7 +203,6 @@ def settings():
     return render_template('settings.html')
 
 
-
 @app.cli.command()
 def forge():
     db.create_all()
