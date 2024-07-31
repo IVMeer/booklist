@@ -14,27 +14,26 @@ else:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = secrets.token_hex(24)
-# 注意更新这里的路径，把 app.root_path 添加到 os.path.dirname() 中
-# 以便把文件定位到项目根目录
+# app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(app.root_path, 'data.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(os.path.dirname(app.root_path), 'data.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 
 @login_manager.user_loader
 def load_user(user_id):
-    from booklist.models import User
+    from watchlist.models import User
     user = User.query.get(int(user_id))
     return user
 
+# chapter 8
 login_manager.login_view = 'login'
 
 @app.context_processor
 def inject_user():
-    from booklist.models import User
+    from watchlist.models import User
     user = User.query.first()
     return dict(user=user)
 
-
-from booklist import views, errors, commands
+from watchlist import views, errors, commands

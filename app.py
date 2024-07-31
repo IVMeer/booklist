@@ -5,7 +5,6 @@ import secrets
 
 from flask import Flask, render_template
 from flask_sqlalchemy import SQLAlchemy
-# 创建电影条目
 from flask import request, url_for, redirect, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager
@@ -25,8 +24,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = secrets.token_hex(24)
 app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(app.root_path, 'data.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # 关闭对模型修改的监控
-# 在扩展类实例化前加载配置
-db = SQLAlchemy(app)
+
+db = SQLAlchemy(app) # 在扩展类实例化前加载配置
 
 # 初始化Flask-Login(实现用户认证)
 login_manager = LoginManager(app)
@@ -36,11 +35,33 @@ login_manager.login_view = 'login'
 def hello():
     return 'Welcome to My Watchlist'
 
+@login_manager.user_loader
+def load_user(user_id):
+    user = User.query.get(int(user_id))
+    return user
 
 @app.context_processor
 def inject_user():
     user = User.query.first()
     return dict(user=user)
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20))
+    username = db.Column(db.String(20))  # 用户名
+    password_hash = db.Column(db.String(128))  # 密码散列值
+
+    def set_password(self, password):  # 用来设置密码的方法，接受密码作为参数
+        self.password_hash = generate_password_hash(password)  # 将生成的密码保持到对应字段
+
+    def validate_password(self, password):  # 用于验证密码的方法，接受密码作为参数
+        return check_password_hash(self.password_hash, password)  # 返回布尔值
+
+
+class Movie(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(60))
+    year = db.Column(db.String(4))
 
 
 @app.errorhandler(404)
@@ -70,7 +91,6 @@ def index():
     return render_template('index.html', movies=movies)
 
 
-# 编辑页面模板
 @app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
 @login_required
 def edit(movie_id):
@@ -104,62 +124,22 @@ def delete(movie_id):
     return redirect(url_for('index'))  # 重定向回主页
 
 
-# 自定义命令来自动执行创建数据库表操作
-@app.cli.command()
-@click.option('--drop', is_flag=True, help="Create after drop")
-def initdb(drop):
-    """Initialize the database"""
-    if drop:
-        db.drop_all()
-    db.create_all()
-    click.echo('Initialized databases.')
+@app.route('/settings', methods=['GET','POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        name = request.form['name']
 
+        if not name or len(name) > 20:
+            flash('Invalid input.')
+            return redirect(url_for('settings'))
 
-class User(db.Model, UserMixin):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(20))
-    username = db.Column(db.String(20))  # 用户名
-    password_hash = db.Column(db.String(128))  # 密码散列值
+        current_user.name = name
+        db.session.commit()
+        flash('Setting updated.')
+        return redirect(url_for('index'))
 
-    def set_password(self, password):  # 用来设置密码的方法，接受密码作为参数
-        self.password_hash = generate_password_hash(password)  # 将生成的密码保持到对应字段
-
-    def validate_password(self, password):  # 用于验证密码的方法，接受密码作为参数
-        return check_password_hash(self.password_hash, password)  # 返回布尔值
-
-
-class Movie(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(60))
-    year = db.Column(db.String(4))
-
-
-# 创建管理员账户
-@app.cli.command()
-@click.option('--username', prompt=True, help='The username used to login.')
-@click.option('--password',prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
-def admin(username, password):
-    """Create user"""
-    db.create_all()
-
-    user = User.query.first()
-    if user is not None:
-        click.echo('Updating user...')
-        user.username = username
-        user.set_password(password)
-    else:
-        click.echo('Creating user...')
-        user = User(username=username, name='Admin')
-        user.set_password(password)
-        db.session.add(user)
-    db.session.commit()
-    click.echo('Done.')
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    user = User.query.get(int(user_id))
-    return user
+    return render_template('settings.html')
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -185,22 +165,22 @@ def login():
     return render_template('login.html')
 
 
-@app.route('/settings', methods=['GET','POST'])
-@login_required
-def settings():
-    if request.method == 'POST':
-        name = request.form['name']
+@app.route('/logout')
+@login_required  # 用于视图保护，后面会详细介绍
+def logout():
+    logout_user()  # 登出用户
+    flash('Goodbye.')
+    return redirect(url_for('index'))  # 重定向回首页
 
-        if not name or len(name) > 20:
-            flash('Invalid input.')
-            return redirect(url_for('settings'))
 
-        current_user.name = name
-        db.session.commit()
-        flash('Setting updated.')
-        return redirect(url_for('index'))
-
-    return render_template('settings.html')
+@app.cli.command()
+@click.option('--drop', is_flag=True, help="Create after drop")
+def initdb(drop):
+    """Initialize the database"""
+    if drop:
+        db.drop_all()
+    db.create_all()
+    click.echo('Initialized databases.')
 
 
 @app.cli.command()
@@ -232,10 +212,29 @@ def forge():
     click.echo('Done.')
 
 
-@app.route('/logout')
-@login_required  # 用于视图保护，后面会详细介绍
-def logout():
-    logout_user()  # 登出用户
-    flash('Goodbye.')
-    return redirect(url_for('index'))  # 重定向回首页
+@app.cli.command()
+@click.option('--username', prompt=True, help='The username used to login.')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
+def admin(username, password):
+    """Create user"""
+    db.create_all()
+
+    user = User.query.first()
+    if user is not None:
+        click.echo('Updating user...')
+        user.username = username
+        user.set_password(password)
+    else:
+        click.echo('Creating user...')
+        user = User(username=username, name='Admin')
+        user.set_password(password)
+        db.session.add(user)
+    db.session.commit()
+    click.echo('Done.')
+
+
+
+
+
+
 

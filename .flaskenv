@@ -1,1 +1,1 @@
-FLASK_APP=booklist
+FLASK_APP=watchlist
