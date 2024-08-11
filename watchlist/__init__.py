@@ -37,3 +37,5 @@ def inject_user():
     return dict(user=user)
 
 from watchlist import views, errors, commands
+
+"""daily"""
